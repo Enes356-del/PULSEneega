@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse AI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #fff;
+        }
+        #container {
+            width: 95%;
+            max-width: 600px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            height: 90vh;
+        }
+        #chatBox {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 15px;
+            word-wrap: break-word;
+            line-height: 1.4;
+            animation: fadeIn 0.3s;
+        }
+        .message img {
+            max-width: 100%;
+            border-radius: 10px;
+            display: block;
+            margin-top: 5px;
+        }
+        .userMsg {
+            background: #4caf50;
+            align-self: flex-end;
+        }
+        .aiMsg {
+            background: #2196f3;
+            align-self: flex-start;
+        }
+        .errorMsg {
+            background: #f44336; /* Kırmızı */
+            align-self: flex-start;
+        }
+        @keyframes fadeIn {
+            from {opacity: 0; transform: translateY(10px);}
+            to {opacity: 1; transform: translateY(0);}
+        }
+        #inputContainer {
+            display: flex;
+            border-top: 1px solid rgba(255,255,255,0.2);
+        }
+        #msg {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            outline: none;
+            font-size: 16px;
+            border-radius: 0;
+            background: transparent;
+            color: #fff;
+        }
+        #sendBtn {
+            padding: 0 20px;
+            background: #ff5722;
+            border: none;
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        #sendBtn:hover {
+            background: #e64a19;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="chatBox"></div>
+        <div id="inputContainer">
+            <input id="msg" placeholder="Mesaj yaz veya 'Çiz: ...' " />
+            <button id="sendBtn">Gönder</button>
+        </div>
+    </div>
+
+    <script>
+        const OPENROUTER_KEY = "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";
+
+        const chatBox = document.getElementById("chatBox");
+
+        function addErrorMessage(error) {
+            console.error("Bir hata oluştu:", error); 
+            const div = document.createElement("div");
+            div.className = "message errorMsg"; 
+            
+            let displayMessage = error.message || "Bilinmeyen bir hata oluştu.";
+            
+            if (displayMessage.includes("Invalid API key")) {
+                 displayMessage = "Geçersiz API Anahtarı! Lütfen koddaki OPENROUTER_KEY değişkenini kontrol edin.";
+            } else if (displayMessage.includes("quota")) {
+                displayMessage = "API limitiniz (kota) dolmuş.";
+            }
+
+            div.textContent = `HATA: ${displayMessage}`;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function askAI(text) {
+            try {
+                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${OPENROUTER_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "openai/gpt-4o-mini",
+                        messages: [
+                            { role: "system", content: "Sen Pulse AI'sın. Kendi adını ASLA söyleme. Kullanıcıyla doğal, zeki ve dostane bir sohbet yap. Gereksiz şeyler ekleme. Sadece soruya veya sohbete odaklan." }, 
+                            { role: "user", content: text }
+                        ]
+                    })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    let errorMessage = `API Hatası: ${response.status}`; 
+                    if (errData) {
+                        if (errData.error && errData.error.message) {
+                            errorMessage = errData.error.message;
+                        } else if (errData.message) {
+                            errorMessage = errData.message;
+                        } else if (errData.error && typeof errData.error === 'string') {
+                            errorMessage = errData.error;
+                        }
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                    return data.choices[0].message.content.trim();
+                } else {
+                    throw new Error("API'den geçerli bir cevap alınamadı.");
+                }
+            
+            } catch (error) {
+                addErrorMessage(error);
+                return null; 
+            }
+        }
+
+        async function generateImage(prompt) {
+            try {
+                const response = await fetch("https://openrouter.ai/api/v1/images/generations", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${OPENROUTER_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "stabilityai/stable-diffusion-3-medium",
+                        prompt: prompt,
+                        n: 1, 
+                        size: "1024x1024"
+                    })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    let errorMessage = `Görsel API Hatası: ${response.status}`;
+                    if (errData) {
+                        if (errData.error && errData.error.message) {
+                            errorMessage = errData.error.message;
+                        } else if (errData.message) {
+                            errorMessage = errData.message;
+                        } else if (errData.error && typeof errData.error === 'string') {
+                            errorMessage = errData.error;
+                        }
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+                if (data.data && data.data[0] && data.data[0].url) {
+                    return data.data[0].url;
+                } else {
+                    throw new Error("API'den geçerli bir görsel URL'si alınamadı.");
+                }
+            } catch (error) {
+                addErrorMessage(error);
+                return null;
+            }
+        }
+
+        function addMessage(sender, text) {
+            const div = document.createElement("div");
+            div.className = `message ${sender === 'Sen' ? 'userMsg' : 'aiMsg'}`;
+            div.textContent = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return div; 
+        }
+
+        function updateMessageWithImage(messageElement, imageUrl) {
+            messageElement.textContent = ""; 
+            const img = document.createElement("img");
+            img.src = imageUrl;
+            img.onload = () => {
+                chatBox.scrollTop = chatBox.scrollHeight; 
+            };
+            messageElement.appendChild(img);
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById("msg");
+            const text = input.value.trim();
+            if (!text) return;
+
+            addMessage("Sen", text);
+            input.value = "";
+
+            const imgTriggers = ["çiz:", "resim:", "fotoğraf:", "oluştur:", "generate:", "draw:"];
+            let isImageRequest = false;
+            let imagePrompt = "";
+
+            for (const trigger of imgTriggers) {
+                if (text.toLowerCase().startsWith(trigger)) {
+                    isImageRequest = true;
+                    imagePrompt = text.substring(trigger.length).trim();
+                    break;
+                }
+            }
+
+            if (isImageRequest) {
+                const placeholder = addMessage("Pulse", "Görselin oluşturuluyor...");
+                const imageUrl = await generateImage(imagePrompt);
+                
+                if (imageUrl) {
+                    updateMessageWithImage(placeholder, imageUrl);
+                } else {
+                    chatBox.removeChild(placeholder); 
+                }
+            } else {
+                const aiResponse = await askAI(text);
+                
+                if (aiResponse) {
+                    addMessage("Pulse", aiResponse);
+                }
+            }
+        }
+
+        document.getElementById("sendBtn").addEventListener("click", sendMessage);
+        document.getElementById("msg").addEventListener("keypress", function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Başlangıç mesajı
+        addMessage("Pulse", "Merhaba! Nasıl yardımcı olabilirim?");
+    </script>
+</body>
+</html>
